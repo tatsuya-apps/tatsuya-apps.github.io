@@ -2,9 +2,25 @@
   "applinks": {
     "details": [
       {
-        "appIDs": ["99H94S24WG.com.tatsuya.TsuriLog"],
+        "appIDs": [
+          "99H94S24WG.com.tatsuya.TsuriLog"
+        ],
         "components": [
-          { "/": "/tsuritap/open/*", "comment": "仲間から届いた釣果・ポイントのリンク" }
+          {
+            "/": "/tsuritap/open/*",
+            "comment": "仲間から届いた釣果・ポイントのリンク"
+          }
+        ]
+      },
+      {
+        "appIDs": [
+          "99H94S24WG.com.tatsuya.Mitana"
+        ],
+        "components": [
+          {
+            "/": "/mitana/w/*",
+            "comment": "ミタヨ：友達のおすすめの QR"
+          }
         ]
       }
     ]
