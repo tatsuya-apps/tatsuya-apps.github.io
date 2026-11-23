@@ -1,0 +1,52 @@
+# ミタヨのデータを毎日作り直す（2026-11-23）
+# - 日本での注目度（ウィキペディアの7日間の閲覧数）→ mitana/data/views.json
+# - Netflix トップ10（日本）。新しい週が出たときだけ → mitana/data/netflix-jp.json
+# アプリはこの2つを1日1回読むだけ。TMDB の鍵はリポジトリの Secrets の TMDB_KEY（ファイルには書かない）
+name: mitana-data
+
+on:
+  schedule:
+    - cron: "0 20 * * *" # 毎日 日本時間 5:00
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: mitana-data
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Netflix トップ10（日本）
+        env:
+          TMDB_KEY: ${{ secrets.TMDB_KEY }}
+        run: |
+          curl -sSfL -o "$RUNNER_TEMP/countries.tsv" https://www.netflix.com/tudum/top10/data/all-weeks-countries.tsv
+          python3 -I tools/mitana/netflix_jp.py "$RUNNER_TEMP/countries.tsv" mitana/data/netflix-jp.json --if-new
+
+      - name: 日本での注目度
+        env:
+          TMDB_KEY: ${{ secrets.TMDB_KEY }}
+        run: python3 -I tools/mitana/views.py mitana/data/views.json
+
+      - name: 変わった物を記録する
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add mitana/data tools/mitana/match_cache.json
+          if git diff --cached --quiet; then
+            echo "変わった物なし"
+          else
+            git commit -m "ミタヨのデータを更新 $(date -u +%Y-%m-%d)"
+            git push
+          fi
