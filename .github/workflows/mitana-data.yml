@@ -13,6 +13,7 @@ on:
 
 permissions:
   contents: write
+  issues: write
 
 concurrency:
   group: mitana-data
@@ -80,3 +81,31 @@ jobs:
             git commit -m "ミタヨのデータを更新 $(date -u +%Y-%m-%d)"
             git push
           fi
+
+      # 止まったら Issue を作って知らせる（GitHub のメールとアプリの通知が届く。2026-11-24）
+      # 同じ Issue が開いていればコメントを足すだけ。直ったら自動で閉じる
+      - name: 止まったら知らせる
+        if: failure() || cancelled()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          t="ミタヨの毎朝の更新が止まりました"
+          n=$(gh issue list --repo "$GITHUB_REPOSITORY" --state open --search "\"$t\" in:title" --json number -q '.[0].number')
+          msg="$(TZ=Asia/Tokyo date '+%Y-%m-%d %H:%M') に失敗しました。どの手順で止まったかはここで見られます：$RUN_URL
+          アプリは前の日のデータをそのまま使うので、すぐには困りません。"
+          if [ -n "$n" ]; then
+            gh issue comment "$n" --repo "$GITHUB_REPOSITORY" --body "$msg"
+          else
+            gh issue create --repo "$GITHUB_REPOSITORY" --title "$t" --body "$msg"
+          fi
+
+      - name: 直ったら知らせを閉じる
+        if: success()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          t="ミタヨの毎朝の更新が止まりました"
+          for n in $(gh issue list --repo "$GITHUB_REPOSITORY" --state open --search "\"$t\" in:title" --json number -q '.[].number'); do
+            gh issue close "$n" --repo "$GITHUB_REPOSITORY" --comment "$(TZ=Asia/Tokyo date '+%Y-%m-%d %H:%M') の更新はうまくいきました。"
+          done
