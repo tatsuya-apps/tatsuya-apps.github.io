@@ -26,6 +26,13 @@ TMDB はグラビアや AV 女優の映像の多くに「成人向け」の印�
               ※ 「ジャンルが付いている物があれば」は甘かった（未亡人下宿などの成人向けのシリーズも残った）のでやめた
     "av-other"：AV 女優などで、ジャンルが無く、上のどれでもない物
   ジャンルが弱い＝ドキュメンタリー・ドラマ・音楽・テレビ映画だけ
+ 3. 日本の映画（元の言葉が日本語）でジャンルが無い物すべて（2026-11-24 抜き取りで Wikidata に無い人のグラビアが多く漏れていた）
+    "jp-name"：題名に出演者本人の名前が入り、出演者が2人以下で、その人が女性か（性別が未登録なら題名が日本語）
+               特集・ベスト・旅・卒業、ライブ・公演・ショー・イベント・限定盤 などの言葉がある物は除く
+               （歌手のライブ・お笑いの単独公演・宝塚のディナーショー・アイドルの誕生日イベント・俳優の旅番組）
+    "jp-word"：題名にはっきり性的な言葉（日本語は JP_SEX_WORDS、英語は単語で JP_SEX_EN。Sexy Zone・ポルノグラフィティは除く）
+    ※ 言葉は題名と同じく小さい字をそろえてから比べる（そろえないと「ショー」「セックス」が当たらなかった）
+    出演者は tools/mitana/jp_nogenre_cache.json に覚え、次からは新しい作品だけ調べる（人の名前が入るので公開のリポジトリには入れず、GitHub のキャッシュに置く）
 
 出力：mitana/data/hidden.json（サイトで誰でも見られるので、題名・人の名前は入れない。2026-11-24 本人と決めた）
   {"updated": "2026-11-24", "count": 123, "items": {"movie-123": {"r": "kw"}}}
@@ -34,7 +41,7 @@ TMDB はグラビアや AV 女優の映像の多くに「成人向け」の印�
 使い方：TMDB_KEY=<鍵> python3 -I tools/mitana/hidden.py mitana/data/hidden.json [<手元の表>.md]
 名乗り（User-Agent）は Wikimedia の決まりどおり、アプリの名前とページの URL。TMDB の鍵は環境変数だけ
 """
-import datetime, json, os, sys, time, unicodedata, urllib.error, urllib.parse, urllib.request
+import datetime, json, os, re, sys, time, unicodedata, urllib.error, urllib.parse, urllib.request
 from concurrent.futures import ThreadPoolExecutor
 
 KEY = os.environ["TMDB_KEY"]
@@ -48,6 +55,15 @@ SEX_WORDS = ["痴漢", "人妻", "情事", "巨乳", "淫", "レイプ", "濡", 
              "団地妻", "宇能鴻一郎", "uno koichiro", "エマニエル", "下半身", "くりいむレモン", "花魁", "四畳半", "童貞", "狂乱", "夫人", "秘本"]
 PINK_COMPANIES = {"Shintoho Pictures", "Xces Film", "Okura Pictures", "Kokuei Company", "Shishi Production", "Tôkatsu Pro",
                   "Million Film", "Nextacy", "Cinepop"}
+JP_SEX_WORDS = ["痴漢", "人妻", "巨乳", "爆乳", "淫", "レイプ", "セックス", "ヌード", "絶頂", "快感", "オナニ", "凌辱", "陵辱",
+                "緊縛", "熟女", "団地妻", "官能", "ポルノ", "ソープ", "痴女", "中出", "フェチ", "変態", "乱交", "不倫", "濡れ", "乳房",
+                "パンティ", "パンチラ", "乳首", "寝取", "風俗", "性感", "性愛", "性欲", "肉欲"]
+JP_SEX_EN = r"\b(sex|sexual|sexually|porno|porn|lewd|orgy|soapland|peeping|erotic|erotica|eros|nude|nudity|fetish|hentai|breasts?|nipples?|rape|perverted|ntr)\b"
+NAME_SKIP = ["特集", "best", "pictures", "edition", "ベスト", "ドキュメント", "document", "旅", "travel", "卒業"]
+MUSIC_WORDS = ["limited", "anniversary", "gig", "party", "video", "blu-ray", "冒険記", "live", "tour", "band", "sound", "music",
+               "巡業", "ショータイム", "フェスタ", "祭り", "セレクション", "selection", "ネタ", "ライブ", "ツアー", "コンサート", "公演", "舞台",
+               "one-man", "ワンマン", "ディナーショー", "dinner", "show", "ショー", "イベント", "event", "限定盤", "生産", "単独", "箱舟",
+               "concert", "recital", "リサイタル", "武道館", "musical", "ミュージカル", "歌", "song"]
 SMALL = str.maketrans("ぁぃぅぇぉゃゅょっゎァィゥェォャュョッヮ", "あいうえおやゆよつわアイウエオヤユヨツワ")
 
 
@@ -82,6 +98,11 @@ def sparql(query):
 def norm(s):
     """空白を除き、全角・半角と小さい字（ぁ→あ）をそろえ、小文字に"""
     return unicodedata.normalize("NFKC", "".join((s or "").split())).translate(SMALL).lower()
+
+
+def has_any(t, words):
+    """norm した題名 t に、言葉のどれかが入っているか（言葉の側も norm する。小さい字をそろえるので「ショー」は「シヨー」になる）"""
+    return any(norm(w) in t for w in words)
 
 
 def load(name):
@@ -172,7 +193,7 @@ def main():
                     add(r["id"], title, "g-name")
                 elif kind == "av" and named:
                     add(r["id"], title, "av-name")
-                elif kind == "av" and any(w in t for w in SEX_WORDS):
+                elif kind == "av" and has_any(t, SEX_WORDS):
                     add(r["id"], title, "av-word")
                 elif kind == "av" and not g:
                     unclear[r["id"]] = title
@@ -215,6 +236,73 @@ def main():
         elif reason:
             add(mid, title, reason)
 
+    # 3. 日本の映画でジャンルが無い物すべて
+    jp = {}
+
+    def year(y):
+        out, page = [], 1
+        while True:
+            d = get("discover/movie", include_adult="false", with_original_language="ja", primary_release_year=y,
+                    sort_by="primary_release_date.asc", page=page)
+            if not d:
+                return out
+            out += [r for r in d["results"] if not r.get("genre_ids")]
+            if page >= min(d.get("total_pages", 1), 500):
+                return out
+            page += 1
+    with ThreadPoolExecutor(8) as ex:
+        for lst in ex.map(year, range(1890, datetime.date.today().year + 2)):
+            for r in lst:
+                jp[r["id"]] = r.get("title") or r.get("original_title") or ""
+    cp = os.path.join(HERE, "jp_nogenre_cache.json")
+    cache = json.load(open(cp, encoding="utf-8")) if os.path.exists(cp) else {}
+    new = [m for m in jp if str(m) not in cache]
+
+    has_ja = re.compile("[\u3040-\u30ff\u4e00-\u9fff]")
+
+    def cast_of(mid):
+        """出演者（6人まで）。1〜2人でローマ字の名前の人は、日本語の別名も足す（佐伯いずみ＝Izumi Saeki）"""
+        d = get(f"movie/{mid}/credits")
+        cast = (d or {}).get("cast", [])[:6]
+        out = []
+        for c in cast:
+            e = [c.get("name") or "", c.get("original_name") or "", c.get("gender") or 0, []]
+            if len(cast) <= 2 and not has_ja.search(e[0] + e[1]):
+                pd = get(f"person/{c['id']}") or {}
+                e[3] = [a for a in pd.get("also_known_as", []) if has_ja.search(a)][:4]
+            out.append(e)
+        return mid, out
+    # 別名を足す前の古い覚え（3つ組）で、1〜2人でローマ字の物は調べ直す
+    for k, v in cache.items():
+        if 0 < len(v) <= 2 and any(len(e) == 3 and not has_ja.search(e[0] + e[1]) for e in v):
+            new.append(int(k))
+    with ThreadPoolExecutor(8) as ex:
+        for mid, cast in ex.map(cast_of, new):
+            cache[str(mid)] = cast
+    cache = {k: v for k, v in cache.items() if int(k) in jp}
+    with open(cp, "w", encoding="utf-8") as f:
+        json.dump(cache, f, ensure_ascii=False, separators=(",", ":"))
+    for mid, title in jp.items():
+        if f"movie-{mid}" in items or f"movie-{mid}" in keep:
+            continue
+        t, low = norm(title), title.lower()
+        # 「エロ」はカタカナの単語の途中（ヒエロファニー など）は数えない
+        # バンド・グループの名前は除く（Sexy Zone・ポルノグラフィティ）
+        if not has_any(t, ["sexy zone", "ポルノグラフィティ", "porno graffitti"]) and (has_any(t, JP_SEX_WORDS) or re.search(JP_SEX_EN, low)
+                                       or re.search("(?<![ァ-ヺー])エロ", t)):
+            add(mid, title, "jp-word")
+            continue
+        cast = cache.get(str(mid), [])
+        if not cast or len(cast) > 2 or has_any(t, NAME_SKIP + MUSIC_WORDS):
+            continue
+        for e in cast:
+            name, orig, gender = e[:3]
+            if not any(len(norm(n)) >= 2 and norm(n) in t for n in [name, orig] + (e[3] if len(e) > 3 else [])):
+                continue
+            if gender == 1 or (gender == 0 and has_ja.search(title)):
+                add(mid, title, "jp-name")
+                break
+
     ordered = sorted(items.items(), key=lambda kv: int(kv[0].split("-")[1]))
     data = {"updated": datetime.date.today().isoformat(), "count": len(items),
             "items": {k: {"r": v["r"].split(":")[0]} for k, v in ordered}}
@@ -230,7 +318,8 @@ def main():
     for v in items.values():
         k = v["r"].split(":")[0]
         by[k] = by.get(k, 0) + 1
-    print(f"出さない作品 {len(items)}（{by}）・人 {len(everyone)}（Wikidata {len(wd)}）・区分と配信で決めた {len(todo)}")
+    print(f"出さない作品 {len(items)}（{by}）・人 {len(everyone)}（Wikidata {len(wd)}）・区分と配信で決めた {len(todo)}・"
+          f"日本のジャンル無し {len(jp)}（出演者を新しく調べた {len(new)}）")
 
 
 if __name__ == "__main__":

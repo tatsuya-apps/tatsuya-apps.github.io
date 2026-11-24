@@ -21,7 +21,7 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 40
+    timeout-minutes: 75
     steps:
       - uses: actions/checkout@v4
 
@@ -41,10 +41,25 @@ jobs:
           TMDB_KEY: ${{ secrets.TMDB_KEY }}
         run: python3 -I tools/mitana/views.py mitana/data/views.json
 
+      # 日本のジャンルの無い映画の出演者の覚え。人の名前が入るので公開のリポジトリには入れず、GitHub のキャッシュに置く（2026-11-24）
+      - name: 出演者の覚えを戻す
+        uses: actions/cache/restore@v4
+        with:
+          path: tools/mitana/jp_nogenre_cache.json
+          key: jp-nogenre-${{ github.run_id }}
+          restore-keys: jp-nogenre-
+
       - name: 出さない作品（グラビア・成人向け）
         env:
           TMDB_KEY: ${{ secrets.TMDB_KEY }}
         run: python3 -I tools/mitana/hidden.py mitana/data/hidden.json
+
+      - name: 出演者の覚えをしまう
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: tools/mitana/jp_nogenre_cache.json
+          key: jp-nogenre-${{ github.run_id }}
 
       - name: みんなのデータ
         env:
