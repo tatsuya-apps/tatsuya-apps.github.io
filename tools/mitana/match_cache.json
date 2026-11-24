@@ -143442,5 +143442,52 @@
 35
 ],
 "how": "clean"
+},
+"Films|Aimitagai": {
+"tmdb": 1311511,
+"media": "movie",
+"lang": "ja",
+"title": "アイミタガイ",
+"poster": "/eKwYJPGUUEKmxMAHhlUEUXQszmn.jpg",
+"genres": [
+18
+],
+"how": "exact"
+},
+"Films|Guarding Stars": {
+"tmdb": 1551025,
+"media": "movie",
+"lang": "en",
+"title": "ガーディングスター",
+"poster": "/5bsXFYXOlbzHBpl9mPaxmOPIQJ9.jpg",
+"genres": [
+10749,
+35
+],
+"how": "exact"
+},
+"Films|To Mom, With Love": {
+"tmdb": 1281484,
+"media": "movie",
+"lang": "ja",
+"title": "お母さんが一緒",
+"poster": "/iqrcEc0p8QvPodPsYRGuMV7ushW.jpg",
+"genres": [
+18,
+35
+],
+"how": "exact"
+},
+"TV|The Blue Road": {
+"tmdb": 300523,
+"media": "tv",
+"lang": "ko",
+"title": "プルンギル －青の道－",
+"poster": "/obML3FHXrGqp420o5A4lwffXEjT.jpg",
+"genres": [
+80,
+9648
+],
+"how": "exact"
 }
 }
