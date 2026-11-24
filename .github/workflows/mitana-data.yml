@@ -1,6 +1,7 @@
 # ミタヨのデータを毎日作り直す（2026-11-23）
 # - 日本での注目度（ウィキペディアの7日間の閲覧数）→ mitana/data/views.json
 # - Netflix トップ10（日本）。新しい週が出たときだけ → mitana/data/netflix-jp.json
+# - 出さない作品（グラビア・成人向けの映像。TMDB のキーワードと出ている人から）→ mitana/data/hidden.json（2026-11-24）
 # - みんなのデータ（CloudKit の公開DB を数える。5人未満は出さない）→ mitana/data/community.json（2026-11-24）
 # アプリはこれらを1日1回読むだけ。CloudKit の鍵は Secrets の CK_KEY_ID・CK_KEY。TMDB の鍵はリポジトリの Secrets の TMDB_KEY（ファイルには書かない）
 name: mitana-data
@@ -39,6 +40,11 @@ jobs:
         env:
           TMDB_KEY: ${{ secrets.TMDB_KEY }}
         run: python3 -I tools/mitana/views.py mitana/data/views.json
+
+      - name: 出さない作品（グラビア・成人向け）
+        env:
+          TMDB_KEY: ${{ secrets.TMDB_KEY }}
+        run: python3 -I tools/mitana/hidden.py mitana/data/hidden.json
 
       - name: みんなのデータ
         env:
