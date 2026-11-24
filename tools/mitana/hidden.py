@@ -22,7 +22,8 @@ TMDB はグラビアや AV 女優の映像の多くに「成人向け」の印�
               ピンク映画の会社（PINK_COMPANIES）でない物（釣りバカ日誌・極道の妻たちなど脇役で出ているだけの作品）
               ※ U-NEXT は成人向けも配信しているので数えない（本人 2026-11-24）
     消さない：AV 女優などで、ジャンルが無いが、同じシリーズ（TMDB のコレクション）に普通の作品と分かっている物
-              （hidden_keep.json にある・ジャンルがきちんと付いている）が1本でもある物（ミナミの帝王など）
+              （hidden_keep.json にあるか、上の配信中・G で消さないと決まった物）が1本でもある物（ミナミの帝王など）
+              ※ 「ジャンルが付いている物があれば」は甘かった（未亡人下宿などの成人向けのシリーズも残った）のでやめた
     "av-other"：AV 女優などで、ジャンルが無く、上のどれでもない物
   ジャンルが弱い＝ドキュメンタリー・ドラマ・音楽・テレビ映画だけ
 
@@ -180,36 +181,39 @@ def main():
         mid, title = item
         d = get(f"movie/{mid}", append_to_response="release_dates,watch/providers")
         if not d:
-            return mid, title, None
+            return mid, title, None, None
         certs = {x.get("certification") for g in d.get("release_dates", {}).get("results", []) if g["iso_3166_1"] == "JP"
                  for x in g["release_dates"] if x.get("certification")}
         if certs & {"R18+", "R18", "R-18"}:
-            return mid, title, "av-r18"
+            return mid, title, "av-r18", None
         jp = d.get("watch/providers", {}).get("results", {}).get("JP", {})
         services = {p["provider_name"] for k in ("flatrate", "free", "ads") for p in jp.get(k, [])}
         services = {s for s in services if not s.startswith("U-NEXT")}
         pink = {c["name"] for c in d.get("production_companies", [])} & PINK_COMPANIES
+        col = None if pink else (d.get("belongs_to_collection") or {}).get("id")
         if (services or certs & {"G", "PG12"}) and not pink:
-            return mid, title, None
-        col = (d.get("belongs_to_collection") or {}).get("id")
-        if col and not pink and series_ok(col):
-            return mid, title, None
-        return mid, title, "av-other"
-
-    series = {}
-
-    def series_ok(cid):
-        if cid not in series:
-            c = get(f"collection/{cid}") or {}
-            series[cid] = any(f"movie-{p['id']}" in keep or (set(p.get("genre_ids") or []) - WEAK_GENRES)
-                              for p in c.get("parts", []))
-        return series[cid]
+            return mid, title, "stay-svc", col
+        return mid, title, "av-other", col
 
     todo = [(m, t) for m, t in unclear.items() if f"movie-{m}" not in items and f"movie-{m}" not in keep]
+    stays = {}      # 消さないと決めた物（手元の表に出す）
+    others = []
     with ThreadPoolExecutor(8) as ex:
-        for mid, title, reason in ex.map(judge, todo):
-            if reason:
+        judged = list(ex.map(judge, todo))
+    ok = {int(k.split("-")[1]) for k in keep} | {m for m, t, r, c in judged if r == "stay-svc"}
+    series = {}
+    for mid, title, reason, col in judged:
+        if reason == "stay-svc":
+            stays[mid] = (title, reason)
+        elif reason == "av-other" and col:
+            if col not in series:
+                series[col] = any(p["id"] in ok for p in (get(f"collection/{col}") or {}).get("parts", []))
+            if series[col]:
+                stays[mid] = (title, "stay-series")
+            else:
                 add(mid, title, reason)
+        elif reason:
+            add(mid, title, reason)
 
     ordered = sorted(items.items(), key=lambda kv: int(kv[0].split("-")[1]))
     data = {"updated": datetime.date.today().isoformat(), "count": len(items),
@@ -219,6 +223,7 @@ def main():
     if len(sys.argv) == 3:
         rows = [f"# 出さない作品の一覧（{data['updated']}・{len(items)}本）", "", "| 番号 | 理由 | 題名 |", "|---|---|---|"]
         rows += [f"| {k} | {v['r']} | {(v['t'] or '').replace('|', '／')} |" for k, v in sorted(ordered, key=lambda kv: kv[1]["r"])]
+        rows += [f"| movie-{m} | {r} | {(t or '').replace('|', '／')} |" for m, (t, r) in stays.items()]
         rows += ["", "## 残す一覧（hidden_keep.json）"] + [f"- {k}" for k in sorted(keep)]
         open(sys.argv[2], "w", encoding="utf-8").write("\n".join(rows) + "\n")
     by = {}
