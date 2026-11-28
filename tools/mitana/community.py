@@ -13,6 +13,12 @@
 - 個人の記録はそのまま出さない。出すのは数えた結果だけ
 鍵は環境変数だけ（ファイルに書かない）。署名は openssl（追加の部品なし）
 
+読み方（2026-11-28、人が増えたときに備えて）：
+- 前の日までの記録を SNAPSHOT（初めは tools/mitana/community_snapshot.json。公開しない。GitHub のキャッシュに置く）に覚え、
+  ふだんは「前に読んだ時刻より後に変わった記録」だけ読んで足す（CloudKit の ___modTime で絞る）
+- CloudKit は消えた記録を差分で教えないので、日曜・覚えが無い・7日より古い・絞り込みが使えないときは全部読み直す
+  （設定でやめた人の分は、遅くとも1週間で数から消える）。COMMUNITY_FULL=1 でいつでも全部読み直す
+
 出力：
 {"updated": "2026-11-24", "min": 5,
  "regions": {"ALL": {...}, "JP": {...}},   ← 国ごと（App Store の国）と全部
@@ -30,6 +36,10 @@ CONTAINER = "iCloud.com.tatsuya.Mitana"
 MIN = 5          # これより少ない人数は出さない
 RECENT_WEEKS = 4
 TOP = 30
+
+
+class CloudKitError(Exception):
+    pass
 
 
 class CloudKit:
@@ -65,22 +75,68 @@ class CloudKit:
                 if e.code in (429, 500, 503) and i < 3:
                     time.sleep(3 + i * 5)
                     continue
-                sys.exit(f"CloudKit {e.code}: {text[:500]}")
+                raise CloudKitError(f"CloudKit {e.code}: {text[:500]}")
 
-    def all_records(self, rtype):
-        out, marker = [], None
+    def all_records(self, rtype, since_ms=None):
+        """{recordName: 中身} を返す。since_ms があれば、その時刻より後に変わった物だけ"""
+        out, marker = {}, None
         while True:
-            body = {"query": {"recordType": rtype}, "resultsLimit": 200}
+            q = {"recordType": rtype}
+            if since_ms is not None:
+                q["filterBy"] = [{"systemFieldName": "___modTime", "comparator": "GREATER_THAN",
+                                  "fieldValue": {"value": since_ms, "type": "TIMESTAMP"}}]
+            body = {"query": q, "resultsLimit": 200}
             if marker:
                 body["continuationMarker"] = marker
             res = self.post("records/query", body)
             for r in res.get("records", []):
-                if "serverErrorCode" in r:
+                if "serverErrorCode" in r or "recordName" not in r:
                     continue
-                out.append({k: v.get("value") for k, v in r.get("fields", {}).items()})
+                out[r["recordName"]] = {k: v.get("value") for k, v in r.get("fields", {}).items()}
             marker = res.get("continuationMarker")
             if not marker:
                 return out
+
+
+def load_records(ck, path, today):
+    """覚え（SNAPSHOT）と CloudKit から、全部の記録を作る。(works, picks, 読み方の説明) を返す"""
+    now_ms = int(time.time() * 1000)
+    snap = None
+    try:
+        with open(path, encoding="utf-8") as f:
+            snap = json.load(f)
+    except (OSError, ValueError):
+        pass
+    full_reason = None
+    if os.environ.get("COMMUNITY_FULL") == "1":
+        full_reason = "COMMUNITY_FULL"
+    elif not snap:
+        full_reason = "覚えが無い"
+    elif today.weekday() == 6:
+        full_reason = "日曜（消えた記録を外す）"
+    elif (today - datetime.date.fromisoformat(snap.get("full", "2000-01-01"))).days >= 7:
+        full_reason = "全部読んでから7日以上"
+    if not full_reason:
+        since = snap["synced"] - 6 * 3600 * 1000   # 6時間さかのぼって読む（時計のずれ・遅れて入る記録の分）
+        try:
+            new_w = ck.all_records("MitanaWork", since)
+            new_p = ck.all_records("MitanaPick", since)
+            snap["works"].update(new_w)
+            snap["picks"].update(new_p)
+            snap["synced"] = now_ms
+            how = f"差分（変わった記録 {len(new_w)}・{len(new_p)} 件）"
+        except CloudKitError as e:
+            full_reason = f"絞り込みが使えない（{str(e)[:120]}）"
+    if full_reason:
+        snap = {"full": today.isoformat(), "synced": now_ms,
+                "works": ck.all_records("MitanaWork"), "picks": ck.all_records("MitanaPick")}
+        how = f"全部読み直し：{full_reason}"
+    os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+    tmp = path + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(snap, f, ensure_ascii=False, separators=(",", ":"))
+    os.replace(tmp, path)
+    return list(snap["works"].values()), list(snap["picks"].values()), how
 
 
 def recent_weeks(today):
@@ -155,12 +211,15 @@ def main():
     if len(sys.argv) != 2:
         sys.exit(__doc__)
     ck = CloudKit(os.environ["CK_KEY_ID"], os.environ["CK_KEY"], os.environ.get("CK_ENV", "production"))
+    today = datetime.date.today()
+    snapshot = os.environ.get("SNAPSHOT", os.path.join(os.path.dirname(os.path.abspath(__file__)), "community_snapshot.json"))
     try:
-        works = ck.all_records("MitanaWork")
-        picks = ck.all_records("MitanaPick")
+        works, picks, how = load_records(ck, snapshot, today)
+    except CloudKitError as e:
+        sys.exit(str(e))
     finally:
         ck.close()
-    today = datetime.date.today()
+    print(how)
     recent = recent_weeks(today)
     regions = {"ALL": count_region(works, picks, recent)}
     for c in sorted({r.get("country") for r in works if r.get("country")}):
