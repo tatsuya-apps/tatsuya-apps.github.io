@@ -37,6 +37,10 @@ jobs:
         run: |
           curl -sSfL -o "$RUNNER_TEMP/countries.tsv" https://www.netflix.com/tudum/top10/data/all-weeks-countries.tsv
           python3 -I tools/mitana/netflix_jp.py "$RUNNER_TEMP/countries.tsv" mitana/data/netflix-jp.json --if-new
+          # 海外版（2026-11-28）：英語の国も同じ形で
+          for c in us gb ca au; do
+            python3 -I tools/mitana/netflix_jp.py "$RUNNER_TEMP/countries.tsv" mitana/data/netflix-$c.json --if-new --country=$c
+          done
 
       - name: 日本での注目度
         env:

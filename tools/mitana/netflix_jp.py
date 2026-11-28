@@ -140,8 +140,8 @@ def match(cat, title, first_year):
             "how": how}
 
 
-def main(tsv, out, all_countries=False, if_new=False):
-    rows = [r for r in csv.DictReader(open(tsv, encoding="utf-8"), delimiter="\t") if all_countries or r["country_iso2"] == "JP"]
+def main(tsv, out, all_countries=False, if_new=False, country="JP"):
+    rows = [r for r in csv.DictReader(open(tsv, encoding="utf-8"), delimiter="\t") if all_countries or r["country_iso2"] == country]
     weeks = sorted(set(r["week"] for r in rows))
     # --if-new：今のファイルと同じ週までなら作り直さない（GitHub で毎日確かめるため）
     if if_new and os.path.exists(out):
@@ -230,4 +230,6 @@ def main(tsv, out, all_countries=False, if_new=False):
 
 
 if __name__ == "__main__":
-    main(sys.argv[1], sys.argv[2], "--all" in sys.argv[3:], "--if-new" in sys.argv[3:])
+    # --country=US：日本以外の国（2026-11-28 海外版。形は日本と同じ。題名はアプリが英語の題名 en も使う）
+    cc = next((a.split("=", 1)[1].upper() for a in sys.argv[3:] if a.startswith("--country=")), "JP")
+    main(sys.argv[1], sys.argv[2], "--all" in sys.argv[3:], "--if-new" in sys.argv[3:], cc)
