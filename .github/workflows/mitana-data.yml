@@ -3,6 +3,7 @@
 # - Netflix トップ10（日本）。新しい週が出たときだけ → mitana/data/netflix-jp.json
 # - 出さない作品（グラビア・成人向けの映像。TMDB のキーワードと出ている人から）→ mitana/data/hidden.json（2026-11-24）
 # - みんなのデータ（CloudKit の公開DB を数える。5人未満は出さない）→ mitana/data/community.json（2026-11-24）
+# - ホームの人気の並び（国 × サブスクごと。アプリはジャンル・年で絞っていないときこれを読む）→ mitana/data/home-<国>.json（2026-11-28）
 # アプリはこれらを1日1回読むだけ。CloudKit の鍵は Secrets の CK_KEY_ID・CK_KEY。TMDB の鍵はリポジトリの Secrets の TMDB_KEY（ファイルには書かない）
 name: mitana-data
 
@@ -61,6 +62,11 @@ jobs:
         with:
           path: tools/mitana/jp_nogenre_cache.json
           key: jp-nogenre-${{ github.run_id }}
+
+      - name: ホームの人気の並び（国 × サブスク）
+        env:
+          TMDB_KEY: ${{ secrets.TMDB_KEY }}
+        run: python3 -I tools/mitana/home.py mitana/data
 
       # みんなのデータの覚え（1件ずつの記録なので公開しない。GitHub のキャッシュに置き、ふだんは変わった分だけ読む。2026-11-28）
       - name: みんなのデータの覚えを取り出す
